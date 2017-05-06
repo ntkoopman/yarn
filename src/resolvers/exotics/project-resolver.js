@@ -6,31 +6,12 @@ import ExoticResolver from './exotic-resolver.js';
 import {removePrefix} from '../../util/misc.js';
 import * as versionUtil from '../../util/version.js';
 import * as fsUtil from '../../util/fs.js';
-import * as crypto from '../../util/crypto.js';
+import {hashFile} from '../../util/crypto.js';
 const fs = require('fs');
 const path = require('path');
 const tar = require('tar-stream');
 const gunzip = require('gunzip-maybe');
 const stripBOM = require('strip-bom');
-
-// TODO: Move to utils
-const cache = {};
-function hashFile(path: string): Promise<string> {
-  if (path in cache) {
-    return Promise.resolve(cache[path]);
-  }
-  return new Promise((resolve, reject) => {
-    const validateStream = new crypto.HashStream();
-    fs.createReadStream(path)
-      .pipe(validateStream)
-      .on('error', reject)
-      .on('finish', () => {
-        const hash = validateStream.getHash();
-        cache[path] = hash;
-        resolve(hash);
-      });
-  });
-}
 
 // TODO: Move to utils
 function extractPackage(path): Promise<Manifest> {
@@ -71,17 +52,9 @@ export default class PackResolver extends ExoticResolver {
 
   static protocol = 'project';
 
-  static async isOutdated(resolved: ?string, config: Config): Promise<boolean> {
-    if (resolved == null) {
-      return true;
-    }
-    if (resolved.startsWith('project:')) {
-      const version = versionUtil.explodeHashedUrl(resolved);
-      const artifact = await resolveWorkspacePath(config, resolved);
-      const hash = await hashFile(artifact);
-      return hash !== version.hash;
-    }
-    return false;
+  static async calculateHash(config: Config, fragment: string): Promise<string> {
+    const path = await resolveWorkspacePath(config, fragment);
+    return await hashFile(path);
   }
 
   async resolve(): Promise<Manifest> {
@@ -99,7 +72,7 @@ export default class PackResolver extends ExoticResolver {
     pkg._uid = hash;
     pkg._remote = {
       type: 'localTarball',
-      resolved: `${this.fragment}#${hash}`,
+      resolved: this.fragment,
       hash: null,
       registry: this.registry,
       reference: artifact,

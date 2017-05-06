@@ -2,9 +2,28 @@
 
 const crypto = require('crypto');
 const stream = require('stream');
+const fs = require('fs');
 
 export function hash(content: string, type: string = 'md5'): string {
   return crypto.createHash(type).update(content).digest('hex');
+}
+
+const cache = {};
+export function hashFile(path: string): Promise<string> {
+  if (path in cache) {
+    return Promise.resolve(cache[path]);
+  }
+  return new Promise((resolve, reject) => {
+    const validateStream = new HashStream();
+    fs.createReadStream(path)
+      .pipe(validateStream)
+      .on('error', reject)
+      .on('finish', () => {
+        const hash = validateStream.getHash();
+        cache[path] = hash;
+        resolve(hash);
+      });
+  });
 }
 
 type HashOptions = duplexStreamOptions;

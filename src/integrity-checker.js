@@ -28,7 +28,7 @@ export type IntegrityCheckResult = {
   integrityMatches?: boolean,
   integrityError?: IntegrityError,
   missingPatterns: Array<string>,
-  outOfDate: boolean,
+  projectFilesMatch: boolean,
 };
 
 type IntegrityHashLocation = {
@@ -46,6 +46,9 @@ type IntegrityFile = {
   },
   files: Array<string>,
   artifacts: ?InstallArtifacts,
+  projectFiles: {
+    [key: string]: string
+  },
 }
 
 type IntegrityFlags = {
@@ -144,6 +147,7 @@ export default class InstallationIntegrityChecker {
       lockfileEntries: {},
       files: [],
       artifacts,
+      projectFiles: {},
     };
 
     result.topLevelPatters = patterns.sort(sortAlpha);
@@ -164,9 +168,13 @@ export default class InstallationIntegrityChecker {
       result.linkedModules = linkedModules.sort(sortAlpha);
     }
 
-    Object.keys(lockfile).forEach((key) => {
-      result.lockfileEntries[key] = lockfile[key].resolved;
-    });
+    for (const key of Object.keys(lockfile)) {
+      const resolved = lockfile[key].resolved;
+      result.lockfileEntries[key] = resolved;
+      if (ProjectResolver.isVersion(resolved)) {
+        result.projectFiles[resolved] = await ProjectResolver.calculateHash(this.config, resolved);
+      }
+    }
 
     if (flags.checkFiles) {
       result.files = await this._getFilesDeep(modulesFolder);
@@ -236,21 +244,12 @@ export default class InstallationIntegrityChecker {
     // check if patterns exist in lockfile
     const missingPatterns = patterns.filter((p) => !lockfile[p]);
 
-    // check if any project dependencies are out of date
-    let outOfDate = false;
-    for (const key of Object.keys(lockfile)) {
-      if (await ProjectResolver.isOutdated(lockfile[key].resolved, this.config)) {
-        outOfDate = true;
-        break;
-      }
-    }
-
     const loc = await this._getIntegrityHashLocation();
     if (missingPatterns.length || !loc.exists) {
       return {
         integrityFileMissing: !loc.exists,
         missingPatterns,
-        outOfDate,
+        projectFilesMatch: false,
       };
     }
 
@@ -262,12 +261,33 @@ export default class InstallationIntegrityChecker {
     const expected = await this._getIntegrityFile(loc.locationPath);
     const integrityMatches = await this._compareIntegrityFiles(actual, expected, flags.checkFiles, loc.locationFolder);
 
+    // check if any project dependencies are out of date
+    let projectFilesOutOfDate = false;
+    if (expected) {
+      for (const fragment of Object.keys(actual.projectFiles)) {
+        const hash = await ProjectResolver.calculateHash(this.config, fragment);
+        console.log(fragment, hash, expected.projectFiles[fragment]);
+        if (hash !== expected.projectFiles[fragment]) {
+          projectFilesOutOfDate = true;
+          break;
+        }
+      }
+      if (projectFilesOutOfDate) {
+        for (const key of Object.keys(lockfile)) {
+          if (lockfile[key].resolved in expected.projectFiles) {
+            // FIXME: Here be dragons
+            delete lockfile[key];
+          }
+        }
+      }
+    }
+
     return {
       integrityFileMissing: false,
       integrityMatches: integrityMatches === 'OK',
       integrityError: integrityMatches === 'OK' ? undefined : integrityMatches,
       missingPatterns,
-      outOfDate,
+      projectFilesMatch: !projectFilesOutOfDate,
     };
   }
 
