@@ -266,7 +266,6 @@ export default class InstallationIntegrityChecker {
     if (expected) {
       for (const fragment of Object.keys(actual.projectFiles)) {
         const hash = await ProjectResolver.calculateHash(this.config, fragment);
-        console.log(fragment, hash, expected.projectFiles[fragment]);
         if (hash !== expected.projectFiles[fragment]) {
           projectFilesOutOfDate = true;
           break;
