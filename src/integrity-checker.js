@@ -264,18 +264,22 @@ export default class InstallationIntegrityChecker {
     // check if any project dependencies are out of date
     let projectFilesOutOfDate = false;
     if (expected) {
-      for (const fragment of Object.keys(actual.projectFiles)) {
-        const hash = await ProjectResolver.calculateHash(this.config, fragment);
-        if (hash !== expected.projectFiles[fragment]) {
-          projectFilesOutOfDate = true;
-          break;
+      if (!expected.projectFiles) {
+        projectFilesOutOfDate = true;
+      } else {
+        for (const fragment of Object.keys(actual.projectFiles)) {
+          const hash = await ProjectResolver.calculateHash(this.config, fragment);
+          if (hash !== expected.projectFiles[fragment]) {
+            projectFilesOutOfDate = true;
+            break;
+          }
         }
-      }
-      if (projectFilesOutOfDate) {
-        for (const key of Object.keys(lockfile)) {
-          if (lockfile[key].resolved in expected.projectFiles) {
-            // FIXME: Here be dragons
-            delete lockfile[key];
+        if (projectFilesOutOfDate) {
+          for (const key of Object.keys(lockfile)) {
+            if (lockfile[key].resolved in expected.projectFiles) {
+              // FIXME: Here be dragons
+              delete lockfile[key];
+            }
           }
         }
       }
